@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>加班计算器</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body {
@@ -389,8 +390,9 @@ tbody tr:hover { background:#fafbff; }
         </div>
 
         <div class="export-btns">
-            <button class="btn btn-sm btn-outline" onclick="exportData()">&#128229; 导出数据 (JSON)</button>
-            <button class="btn btn-sm btn-outline" onclick="importDataPrompt()">&#128228; 导入数据</button>
+            <button class="btn btn-sm btn-outline" onclick="exportData()">&#128229; 导出 Excel</button>
+            <button class="btn btn-sm btn-outline" onclick="importDataPrompt()">&#128228; 导入 Excel</button>
+            <span style="font-size:0.75em;color:#999;">导入格式：日期 | 上班时间 | 下班时间 | (可选)备注</span>
             <button class="btn btn-sm btn-del" onclick="clearAll()">&#128465; 清空全部</button>
         </div>
     </div>
@@ -1453,48 +1455,333 @@ function onEditDayoffToggle() {
 
 // ==================== 导入导出 ====================
 function exportData() {
-    var data = {
-        settings: getSettings(),
-        entries: getEntries(),
-        exportTime: new Date().toISOString()
-    };
-    var blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = '加班记录_' + new Date().toISOString().split('T')[0] + '.json';
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast('📥 数据已导出');
+    var entries = getEntries();
+    var settings = getSettings();
+
+    // ========== Sheet1: 加班记录明细 ==========
+    var detailRows = [['日期', '类型', '上班时间', '下班时间', '工作时长(h)', '扣除(h)', '净工时(h)', '加班时长(h)', '备注']];
+    for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        var isWorkday = (e.is_workday === undefined || e.is_workday === null) ? true : e.is_workday;
+        var calc = calculateOvertime(e.start_time, e.end_time, isWorkday);
+        var dayType = isWorkday ? '工作日' : '休息日';
+        var dayDesc = getDayTypeDescription(e.date);
+        if (dayDesc && dayDesc !== '工作日' && dayDesc !== '周六' && dayDesc !== '周日') {
+            dayType += ' (' + dayDesc + ')';
+        }
+        detailRows.push([
+            e.date,
+            dayType,
+            e.start_time,
+            e.end_time,
+            calc.totalHours,
+            calc.totalDeduction,
+            calc.netHours,
+            calc.overtime,
+            e.remark || ''
+        ]);
+    }
+
+    // ========== Sheet2: 月度汇总 ==========
+    var summaryMap = {};
+    var allTotal = 0;
+    for (var j = 0; j < entries.length; j++) {
+        var ej = entries[j];
+        var isWd = (ej.is_workday === undefined || ej.is_workday === null) ? true : ej.is_workday;
+        var cj = calculateOvertime(ej.start_time, ej.end_time, isWd);
+        var monthKey = ej.date.substring(0, 7); // "2026-06"
+        if (!summaryMap[monthKey]) {
+            summaryMap[monthKey] = { count: 0, ot: 0 };
+        }
+        summaryMap[monthKey].count++;
+        summaryMap[monthKey].ot += cj.overtime;
+        allTotal += cj.overtime;
+    }
+
+    var summaryRows = [['月份', '记录条数', '加班总时长(h)']];
+    var months = Object.keys(summaryMap).sort();
+    for (var k = 0; k < months.length; k++) {
+        var sm = summaryMap[months[k]];
+        summaryRows.push([months[k], sm.count, parseFloat(sm.ot.toFixed(1))]);
+    }
+    summaryRows.push(['合计', entries.length, parseFloat(allTotal.toFixed(1))]);
+
+    // ========== Sheet3: 设置信息 ==========
+    var settingsRows = [
+        ['设置项', '值'],
+        ['默认上班时间', settings.defaultStart],
+        ['默认下班时间', settings.defaultEnd],
+        ['午餐扣除(小时)', settings.lunch],
+        ['晚餐扣除(小时)', settings.dinner],
+        ['导出时间', new Date().toLocaleString('zh-CN')]
+    ];
+
+    // 生成 Excel
+    var wb = XLSX.utils.book_new();
+    var wsDetail = XLSX.utils.aoa_to_sheet(detailRows);
+    var wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+    var wsSettings = XLSX.utils.aoa_to_sheet(settingsRows);
+
+    // 设置列宽
+    wsDetail['!cols'] = [
+        {wch: 12}, {wch: 16}, {wch: 10}, {wch: 10},
+        {wch: 13}, {wch: 10}, {wch: 12}, {wch: 13}, {wch: 20}
+    ];
+    wsSummary['!cols'] = [{wch: 12}, {wch: 12}, {wch: 16}];
+    wsSettings['!cols'] = [{wch: 20}, {wch: 20}];
+
+    XLSX.utils.book_append_sheet(wb, wsDetail, '加班记录明细');
+    XLSX.utils.book_append_sheet(wb, wsSummary, '月度汇总');
+    XLSX.utils.book_append_sheet(wb, wsSettings, '设置');
+
+    XLSX.writeFile(wb, '加班记录_' + new Date().toISOString().split('T')[0] + '.xlsx');
+    showToast('📥 Excel 已导出（3个工作表）');
 }
 
 function importDataPrompt() {
     var input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.json';
+    input.accept = '.xlsx,.xls,.csv,.json';
     input.onchange = function(e) {
         var file = e.target.files[0];
         if (!file) return;
         var reader = new FileReader();
         reader.onload = function(ev) {
             try {
-                var data = JSON.parse(ev.target.result);
-                if (!data.entries || !Array.isArray(data.entries)) {
-                    throw new Error('数据格式错误');
+                var fileName = file.name.toLowerCase();
+                var entries = [];
+                var settings = null;
+
+                if (fileName.endsWith('.json')) {
+                    // 兼容旧的 JSON 格式
+                    var data = JSON.parse(ev.target.result);
+                    if (!data.entries || !Array.isArray(data.entries)) {
+                        throw new Error('JSON 数据格式错误');
+                    }
+                    entries = data.entries;
+                    settings = data.settings;
+                } else {
+                    // Excel / CSV 导入
+                    var wb = XLSX.read(ev.target.result, {type: 'array'});
+                    var sheetName = wb.SheetNames[0];
+                    var sheet = wb.Sheets[sheetName];
+                    // raw:true (默认) → 日期和时间保持为原始数字，由 normalizeDate/normalizeTime 统一解析，避免时区和格式问题
+                    var rows = XLSX.utils.sheet_to_json(sheet, {header: 1});
+
+                    if (!rows || rows.length === 0) {
+                        throw new Error('文件为空');
+                    }
+
+                    // 判断第一行是否为表头（包含"日期""上班""下班"等关键词）
+                    var firstRow = rows[0];
+                    var isHeader = false;
+                    if (firstRow && firstRow.length >= 3) {
+                        var r0 = String(firstRow[0] || '').trim();
+                        var r1 = String(firstRow[1] || '').trim();
+                        var r2 = String(firstRow[2] || '').trim();
+                        // 如果第一行包含这些关键词 → 是表头，跳过
+                        if ((r0.indexOf('日期') !== -1 || r0.indexOf('时间') !== -1 || r0 === 'date' || r0 === 'Date') ||
+                            (r1.indexOf('上班') !== -1 || r1.indexOf('开始') !== -1 || r1.indexOf('start') !== -1) ||
+                            (r2.indexOf('下班') !== -1 || r2.indexOf('结束') !== -1 || r2.indexOf('end') !== -1)) {
+                            isHeader = true;
+                        }
+                        // 如果第一行第一列是合法的日期格式 → 可能是数据，不是表头
+                        var dateCheck = normalizeDate(r0);
+                        if (dateCheck && /^\d{4}-\d{2}-\d{2}$/.test(dateCheck)) {
+                            isHeader = false;
+                        }
+                    }
+
+                    var startRow = isHeader ? 1 : 0;
+
+                    for (var r = startRow; r < rows.length; r++) {
+                        var row = rows[r];
+                        if (!row || row.length < 3) continue;
+
+                        // 前3列：日期、上班时间、下班时间
+                        var dateVal = normalizeDate(row[0]);
+                        var startVal = normalizeTime(row[1]);
+                        var endVal = normalizeTime(row[2]);
+
+                        if (!dateVal || !startVal || !endVal) continue;
+
+                        // 第4列如果有值 → 可能是类型或备注
+                        var isWorkday = !isAutoRestDay(dateVal);
+                        var remark = '';
+                        if (row.length >= 4 && row[3] !== undefined && row[3] !== null) {
+                            var col4 = String(row[3] || '').trim();
+                            if (col4.indexOf('休息') !== -1 || col4.indexOf('假日') !== -1) {
+                                isWorkday = false;
+                            } else if (col4.indexOf('工作日') !== -1 || col4.indexOf('上班') !== -1) {
+                                isWorkday = true;
+                            } else {
+                                remark = col4;
+                            }
+                        }
+                        if (row.length >= 5 && row[4] !== undefined && row[4] !== null) {
+                            remark = String(row[4] || '').trim();
+                        }
+
+                        entries.push({
+                            date: dateVal,
+                            start_time: startVal,
+                            end_time: endVal,
+                            is_workday: isWorkday,
+                            remark: remark
+                        });
+                    }
                 }
-                if (!confirm('将导入 ' + data.entries.length + ' 条记录和设置，会覆盖当前数据，确认？')) return;
-                if (data.settings) saveSettingsToStorage(data.settings);
-                saveEntries(data.entries);
+
+                if (entries.length === 0) {
+                    throw new Error('文件中没有找到有效记录\n\n请确保Excel格式：\n第1列=日期  第2列=上班时间  第3列=下班时间\n（可带表头行，也可不带）');
+                }
+
+                if (!confirm('将导入 ' + entries.length + ' 条记录' + (settings ? '和设置' : '') + '，会覆盖当前数据，确认？')) return;
+
+                if (settings) {
+                    saveSettingsToStorage(settings);
+                }
+                // 按日期降序排列
+                entries.sort(function(a, b) {
+                    if (a.date > b.date) return -1;
+                    if (a.date < b.date) return 1;
+                    return 0;
+                });
+                saveEntries(entries);
                 loadSettings();
                 renderTable();
-                showToast('✅ 成功导入 ' + data.entries.length + ' 条记录');
+                showToast('✅ 成功导入 ' + entries.length + ' 条记录');
             } catch(err) {
-                showToast('❌ 文件格式错误，导入失败', '#e74c3c');
+                showToast('❌ ' + (err.message || '文件格式错误，导入失败'), '#e74c3c');
             }
         };
-        reader.readAsText(file);
+
+        if (file.name.toLowerCase().endsWith('.json')) {
+            reader.readAsText(file);
+        } else {
+            reader.readAsArrayBuffer(file);
+        }
     };
     input.click();
+}
+
+// 标准化 Excel 导出的日期格式
+function normalizeDate(val) {
+    if (val === undefined || val === null || val === '') return '';
+
+    // Excel 数字日期（含日期时间序列号）
+    if (typeof val === 'number') {
+        // 取整数部分 = 日期序列号
+        var dateNum = Math.floor(val);
+        if (dateNum > 30000 && dateNum < 80000) {
+            var excelDate = new Date((dateNum - 25569) * 86400 * 1000);
+            return formatDateStr(excelDate);
+        }
+    }
+
+    // Date 对象
+    if (val instanceof Date && !isNaN(val.getTime())) {
+        return formatDateStr(val);
+    }
+
+    var str = String(val).trim();
+    if (!str) return '';
+
+    // 已经是 YYYY-MM-DD 格式
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+    // 纯整数（Excel 日期序列号的字符串形式）
+    if (/^\d+$/.test(str)) {
+        var num = parseInt(str);
+        if (num > 30000 && num < 80000) {
+            var excelDate2 = new Date((num - 25569) * 86400 * 1000);
+            return formatDateStr(excelDate2);
+        }
+    }
+
+    // MM/DD/YYYY 或 YYYY/MM/DD 格式
+    var parts = str.split(/[\/\-\.]/);
+    if (parts.length === 3) {
+        var a = parseInt(parts[0]), b = parseInt(parts[1]), cc = parseInt(parts[2]);
+        if (isNaN(a) || isNaN(b) || isNaN(cc)) return '';
+        if (a > 12) { // YYYY/MM/DD
+            return a + '-' + pad2(b) + '-' + pad2(cc);
+        } else { // MM/DD/YYYY
+            return cc + '-' + pad2(a) + '-' + pad2(b);
+        }
+    }
+
+    // 中文格式：2025年1月5日
+    var cnMatch = str.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+    if (cnMatch) {
+        return cnMatch[1] + '-' + pad2(parseInt(cnMatch[2])) + '-' + pad2(parseInt(cnMatch[3]));
+    }
+
+    return '';
+}
+
+// 标准化时间格式
+function normalizeTime(val) {
+    if (val === undefined || val === null || val === '') return '';
+
+    // 如果是数字（Excel 序列号）
+    if (typeof val === 'number') {
+        // 提取纯时间部分：整数部分 = 日期，小数部分 = 时间
+        var frac = val - Math.floor(val);
+        // 处理浮点精度：比如 0.3854166666666667 → 09:15
+        var totalMin = Math.round(frac * 24 * 60);
+        if (totalMin >= 1440) totalMin -= 1440; // 边界 case：23:59 的精度问题
+        var hh = Math.floor(totalMin / 60);
+        var mm = totalMin % 60;
+        return pad2(hh) + ':' + pad2(mm);
+    }
+
+    // 如果是 Date 对象
+    if (val instanceof Date && !isNaN(val.getTime())) {
+        return pad2(val.getHours()) + ':' + pad2(val.getMinutes());
+    }
+
+    var str = String(val).trim();
+    if (!str) return '';
+
+    // 已经是 HH:MM 格式 (如 "09:15")
+    if (/^\d{2}:\d{2}$/.test(str)) return str;
+
+    // Excel 纯时间小数转成的字符串 (如 "0.3854166666666667")
+    var numVal = parseFloat(str);
+    if (!isNaN(numVal) && numVal >= 0 && numVal < 1 && str.indexOf('.') !== -1) {
+        var totalMin2 = Math.round(numVal * 24 * 60);
+        if (totalMin2 >= 1440) totalMin2 -= 1440;
+        var hh2 = Math.floor(totalMin2 / 60);
+        var mm2 = totalMin2 % 60;
+        return pad2(hh2) + ':' + pad2(mm2);
+    }
+
+    // 时间字符串：H:MM、HH:MM、HH:MM:SS、H:MM:SS，可能带 AM/PM
+    var ampm = false;
+    var isPM = false;
+    if (/pm/i.test(str)) { ampm = true; isPM = true; }
+    else if (/am/i.test(str)) { ampm = true; isPM = false; }
+
+    var timeMatch = str.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (timeMatch) {
+        var hour = parseInt(timeMatch[1]);
+        var minute = parseInt(timeMatch[2]);
+        if (ampm && isPM && hour < 12) hour += 12;
+        if (ampm && !isPM && hour === 12) hour = 0;
+        return pad2(hour) + ':' + pad2(minute);
+    }
+
+    return '';
+}
+
+function pad2(n) {
+    return n < 10 ? '0' + n : '' + n;
+}
+
+function formatDateStr(d) {
+    // 使用 UTC 方法，避免本地时区导致日期偏移一天
+    return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate());
 }
 
 // ==================== Toast ====================
