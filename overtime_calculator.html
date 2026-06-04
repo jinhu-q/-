@@ -1,0 +1,1850 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>加班计算器</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh; padding: 20px;
+}
+.container { max-width: 1000px; margin: 0 auto; }
+h1 { text-align:center; color:#fff; font-size:2em; margin-bottom:6px; text-shadow:0 2px 4px rgba(0,0,0,0.2); }
+.subtitle { text-align:center; color:rgba(255,255,255,0.8); margin-bottom:24px; font-size:0.95em; }
+.card {
+    background:#fff; border-radius:16px; padding:28px; margin-bottom:20px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.15);
+}
+.card-title {
+    font-size:1.2em; font-weight:700; color:#333; margin-bottom:18px;
+    padding-bottom:12px; border-bottom:2px solid #f0f0f0;
+}
+.form-row { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+.form-group { display:flex; flex-direction:column; min-width:120px; }
+.form-group label { font-size:0.85em; color:#666; margin-bottom:5px; font-weight:500; }
+.form-group input {
+    padding:10px 14px; border:2px solid #e0e0e0; border-radius:10px;
+    font-size:1em; transition:border-color 0.2s; font-family:inherit;
+}
+.form-group input:focus { outline:none; border-color:#667eea; box-shadow:0 0 0 3px rgba(102,126,234,0.15); }
+.form-group input[type="time"] { width:140px; }
+.form-group input[type="date"] { width:150px; }
+.btn {
+    padding:10px 22px; border:none; border-radius:10px; font-size:0.95em;
+    font-weight:600; cursor:pointer; transition:all 0.2s; font-family:inherit; white-space:nowrap;
+}
+.btn-primary { background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:#fff; }
+.btn-primary:hover { transform:translateY(-1px); box-shadow:0 4px 12px rgba(102,126,234,0.4); }
+.btn-sm { padding:5px 12px; font-size:0.82em; border-radius:6px; }
+.btn-edit { background:#ffc107; color:#333; }
+.btn-edit:hover { background:#e0a800; }
+.btn-del { background:#dc3545; color:#fff; }
+.btn-del:hover { background:#c82333; }
+.btn-outline { background:#fff; color:#667eea; border:2px solid #667eea; }
+.btn-outline:hover { background:#667eea; color:#fff; }
+
+table { width:100%; border-collapse:collapse; }
+thead th {
+    background:#f8f9fa; padding:12px 10px; text-align:left;
+    font-size:0.88em; color:#555; font-weight:600; border-bottom:2px solid #e0e0e0;
+}
+tbody td { padding:12px 10px; border-bottom:1px solid #f0f0f0; font-size:0.93em; }
+tbody tr:hover { background:#fafbff; }
+.ot-cell { font-weight:700; color:#e74c3c; font-size:1.05em; }
+.no-ot { color:#999; }
+
+.summary-bar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; }
+.total-box {
+    background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:#fff;
+    padding:16px 28px; border-radius:12px; text-align:center; min-width:160px;
+}
+.total-box .number { font-size:2.2em; font-weight:800; line-height:1.1; }
+.total-box .label { font-size:0.85em; opacity:0.9; margin-top:4px; }
+
+.calc-preview {
+    background:#f8f9fa; border-radius:10px; padding:14px 18px; margin-top:12px;
+    font-size:0.9em; display:flex; flex-wrap:wrap; gap:20px;
+}
+.calc-preview .item { display:flex; flex-direction:column; }
+.calc-preview .item .val { font-weight:700; font-size:1.3em; color:#667eea; }
+.calc-preview .item .lbl { font-size:0.8em; color:#999; }
+.calc-preview .overtime-val { color:#e74c3c !important; }
+
+.rule-box { font-size:0.85em; color:#666; line-height:1.8; background:#f8f9fa; border-radius:10px; padding:14px 18px; margin-top:8px; }
+.rule-box strong { color:#333; }
+
+.modal-overlay { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; justify-content:center; align-items:center; }
+.modal-overlay.active { display:flex; }
+.modal {
+    background:#fff; border-radius:16px; padding:28px; width:90%; max-width:480px;
+    box-shadow:0 16px 48px rgba(0,0,0,0.25);
+}
+.modal h3 { margin-bottom:20px; }
+
+.toast {
+    position:fixed; top:20px; right:20px; background:#27ae60; color:#fff;
+    padding:12px 24px; border-radius:10px; font-weight:600;
+    box-shadow:0 4px 12px rgba(0,0,0,0.2); z-index:2000;
+    opacity:0; transform:translateY(-20px); transition:all 0.3s;
+}
+.toast.show { opacity:1; transform:translateY(0); }
+
+@media (max-width:600px) {
+    .form-row { flex-direction:column; }
+    .form-group input[type="time"], .form-group input[type="date"] { width:100%; }
+    h1 { font-size:1.5em; } .card { padding:18px; }
+    .holiday-section { flex-direction:column; }
+    .holiday-col { min-width:auto; }
+    .deploy-options { flex-direction:column; }
+    .toast { left:20px; right:20px; top:auto; bottom:20px; text-align:center; }
+    .summary-bar { flex-direction:column; align-items:stretch; }
+    .export-btns { justify-content:center; }
+}
+
+.settings-row { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+.export-btns { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+
+/* 休息日开关 */
+.toggle-group { display:flex; align-items:center; gap:8px; }
+.toggle-switch { position:relative; width:48px; height:26px; }
+.toggle-switch input { opacity:0; width:0; height:0; }
+.toggle-slider {
+    position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0;
+    background:#e0e0e0; border-radius:26px; transition:0.3s;
+}
+.toggle-slider:before {
+    content:""; position:absolute; height:20px; width:20px; left:3px; bottom:3px;
+    background:#fff; border-radius:50%; transition:0.3s;
+}
+.toggle-switch input:checked + .toggle-slider { background:linear-gradient(135deg, #e74c3c, #c0392b); }
+.toggle-switch input:checked + .toggle-slider:before { transform:translateX(22px); }
+.toggle-label { font-size:0.9em; font-weight:600; color:#666; user-select:none; }
+.toggle-label.dayoff { color:#e74c3c; }
+
+.badge {
+    display:inline-block; padding:3px 8px; border-radius:12px;
+    font-size:0.78em; font-weight:700;
+}
+.badge-workday { background:#e8f5e9; color:#2e7d32; }
+.badge-dayoff { background:#ffebee; color:#c62828; }
+
+.dayoff-row { background:#fff5f5 !important; }
+
+/* 节假日管理 */
+.holiday-panel { margin-top:8px; }
+.holiday-section { display:flex; gap:20px; flex-wrap:wrap; }
+.holiday-col { flex:1; min-width:300px; }
+.holiday-col h4 { font-size:0.95em; margin-bottom:10px; color:#555; }
+.holiday-year-filter { display:flex; gap:8px; align-items:center; margin-bottom:12px; }
+.holiday-year-filter select {
+    padding:6px 10px; border:2px solid #e0e0e0; border-radius:8px; font-size:0.9em; font-family:inherit;
+}
+.holiday-list { max-height:240px; overflow-y:auto; margin-bottom:10px; }
+.holiday-item {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:7px 10px; margin:3px 0; background:#fff; border-radius:8px;
+    border:1px solid #f0f0f0; font-size:0.88em; transition:background 0.15s;
+}
+.holiday-item:hover { background:#fafbff; }
+.holiday-item .date-text { font-weight:500; color:#333; }
+.holiday-item .btn-del-sm {
+    background:none; border:none; color:#dc3545; cursor:pointer;
+    font-size:1.1em; padding:2px 6px; border-radius:4px; transition:background 0.15s;
+}
+.holiday-item .btn-del-sm:hover { background:#fff5f5; }
+.holiday-add-row { display:flex; gap:8px; align-items:center; }
+.holiday-add-row input[type="date"] {
+    flex:1; padding:7px 10px; border:2px solid #e0e0e0; border-radius:8px;
+    font-size:0.88em; font-family:inherit;
+}
+.holiday-add-row input[type="date"]:focus { outline:none; border-color:#667eea; }
+.btn-reset { background:#fff; color:#e74c3c; border:1px solid #e74c3c; }
+.btn-reset:hover { background:#fff5f5; }
+
+/* 可折叠面板 */
+.collapsible-header { cursor:pointer; user-select:none; display:flex; justify-content:space-between; align-items:center; }
+.collapsible-header:hover { opacity:0.85; }
+.collapse-arrow { font-size:0.8em; color:#999; transition:transform 0.3s; }
+.collapse-arrow.open { transform:rotate(180deg); }
+
+/* 使用说明 & 部署建议 */
+.guide-step {
+    display:flex; gap:12px; align-items:flex-start; margin-bottom:10px;
+    padding:10px 14px; background:#fff; border-radius:10px; border:1px solid #f0f0f0;
+}
+.guide-step .step-num {
+    background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color:#fff; border-radius:50%; width:26px; height:26px; display:flex;
+    align-items:center; justify-content:center; font-weight:700; font-size:0.85em;
+    flex-shrink:0; margin-top:1px;
+}
+.guide-step .step-content { font-size:0.88em; color:#555; line-height:1.6; }
+.guide-step code {
+    background:#f0f0f0; padding:2px 6px; border-radius:4px; font-size:0.9em;
+}
+.deploy-options { display:flex; gap:16px; flex-wrap:wrap; }
+.deploy-card {
+    flex:1; min-width:200px; padding:16px; background:#fff; border-radius:12px;
+    border:2px solid #f0f0f0; text-align:center; transition:border-color 0.2s;
+}
+.deploy-card:hover { border-color:#667eea; }
+.deploy-card .deploy-icon { font-size:2em; margin-bottom:8px; }
+.deploy-card h4 { font-size:0.95em; margin-bottom:6px; color:#333; }
+.deploy-card p { font-size:0.82em; color:#888; line-height:1.5; }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>&#9200; 加班计算器</h1>
+    <p class="subtitle">浮动上下班时间 · 自动扣除午休/晚餐 · 加班自动计算 · 数据本地存储</p>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <!-- 设置 -->
+    <div class="card">
+        <div class="card-title">&#9881;&#65039; 默认设置</div>
+        <div class="settings-row">
+            <div class="form-group">
+                <label>默认上班时间</label>
+                <input type="time" id="defaultStart" value="09:15">
+            </div>
+            <div class="form-group">
+                <label>默认下班时间</label>
+                <input type="time" id="defaultEnd" value="18:30">
+            </div>
+            <div class="form-group">
+                <label>午餐扣除 (小时)</label>
+                <input type="number" id="lunchDeduction" value="1.25" step="0.25" min="0" max="3" style="width:100px;">
+            </div>
+            <div class="form-group">
+                <label>晚餐扣除 (小时，时段18:30-19:00)</label>
+                <input type="number" id="dinnerDeduction" value="0.5" step="0.25" min="0" max="3" style="width:100px;">
+            </div>
+            <div class="form-group" style="justify-content:flex-end;">
+                <button class="btn btn-outline" onclick="saveSettings()">&#128190; 保存设置</button>
+            </div>
+        </div>
+        <div class="rule-box" id="ruleBox">
+            <strong>&#128203; 计算规则：</strong><br>
+            <span style="color:#2e7d32;"><strong>▸ 工作日：</strong></span><br>
+            ① 工作时长 = 下班 − 上班<br>
+            ② 午餐固定扣除 = <span id="ruleLunch">1.25</span>h<br>
+            ③ 18:30~19:00 晚餐时段不算工作时间，按实际重叠扣除（上限 <span id="ruleDinner">0.5</span>h）<br>
+            ④ 净工时 = ① − ② − ③<br>
+            ⑤ 加班 = max(0, 净工时 − 8h标准工时)<br>
+            <span style="color:#c62828;"><strong>▸ 休息日：</strong></span><br>
+            ⑥ 不扣 8h 标准工时，全部计为加班<br>
+            ⑦ 工作时段覆盖 12:00~13:15 午餐，按实际重叠扣除<br>
+            ⑧ 工作时段覆盖 18:30~19:00 晚餐，按实际重叠扣除（上限 <span id="ruleDinner2">0.5</span>h）<br>
+            ⑨ 加班不足 0.5 小时不计，向下取整到 0.5 小时
+        </div>
+    </div>
+
+    <!-- 节假日管理 -->
+    <div class="card">
+        <div class="card-title collapsible-header" onclick="toggleHolidayPanel()">
+            <span>&#128197; 节假日管理 <span style="font-weight:400;font-size:0.85em;color:#999;">— 管理法定节假日与调休补班</span></span>
+            <span class="collapse-arrow" id="holidayPanelArrow">&#9660;</span>
+        </div>
+        <div id="holidayPanel" style="display:none;">
+            <div class="holiday-panel">
+                <div class="holiday-year-filter">
+                    <label style="font-size:0.88em;font-weight:600;color:#555;">筛选年份：</label>
+                    <select id="holidayYearFilter" onchange="renderHolidayPanel()">
+                        <option value="all">全部年份</option>
+                    </select>
+                    <button class="btn btn-sm btn-outline" onclick="resetHolidayData()" title="恢复为内置默认数据">&#8635; 恢复默认</button>
+                </div>
+                <div class="holiday-section">
+                    <!-- 法定节假日 -->
+                    <div class="holiday-col">
+                        <h4>&#128308; 法定节假日（休息）</h4>
+                        <div class="holiday-list" id="holidayListContainer">
+                            <div style="text-align:center;color:#aaa;padding:16px;">加载中...</div>
+                        </div>
+                        <div class="holiday-add-row">
+                            <input type="date" id="newHolidayDate" title="添加法定节假日">
+                            <button class="btn btn-sm btn-primary" onclick="addHoliday()">&#10133; 添加</button>
+                        </div>
+                    </div>
+                    <!-- 调休补班日 -->
+                    <div class="holiday-col">
+                        <h4>&#128994; 调休补班日（周末但上班）</h4>
+                        <div class="holiday-list" id="makeupListContainer">
+                            <div style="text-align:center;color:#aaa;padding:16px;">加载中...</div>
+                        </div>
+                        <div class="holiday-add-row">
+                            <input type="date" id="newMakeupDate" title="添加调休补班日">
+                            <button class="btn btn-sm btn-primary" onclick="addMakeupDay()">&#10133; 添加</button>
+                        </div>
+                    </div>
+                </div>
+                <div style="margin-top:8px;font-size:0.78em;color:#999;">
+                    &#128161; 提示：修改后自动保存。添加未来年份的节假日可让计算器长期适用。
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新增记录 -->
+    <div class="card">
+        <div class="card-title">&#128203; 添加每日记录</div>
+        <div class="form-row" id="addForm">
+            <div class="form-group">
+                <label>日期 * <span style="font-weight:400;font-size:0.82em;color:#999;">（自动判断工作日/休息日）</span></label>
+                <input type="date" id="inputDate">
+            </div>
+            <div class="form-group">
+                <label>上班时间</label>
+                <input type="time" id="inputStart">
+            </div>
+            <div class="form-group">
+                <label>下班时间</label>
+                <input type="time" id="inputEnd">
+            </div>
+            <div class="form-group" style="justify-content:flex-end;">
+                <label>&nbsp;</label>
+                <div class="toggle-group">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="inputDayoff" onchange="onDayoffToggle()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span class="toggle-label" id="dayoffLabel">选择日期后自动判断</span>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>备注</label>
+                <input type="text" id="inputRemark" placeholder="选填" style="width:140px;">
+            </div>
+            <div class="form-group" style="justify-content:flex-end;">
+                <button class="btn btn-primary" onclick="addEntry()">&#10133; 添加记录</button>
+            </div>
+        </div>
+        <!-- 实时预览 -->
+        <div class="calc-preview" id="calcPreview">
+            <div class="item"><span class="lbl">日期类型</span><span class="val" id="previewType" style="font-size:1em;">工作日</span></div>
+            <div class="item"><span class="lbl">工作时长</span><span class="val" id="previewTotal">—</span></div>
+            <div class="item" id="previewStdItem"><span class="lbl">标准工时</span><span class="val" id="previewStd">8.0h</span></div>
+            <div class="item"><span class="lbl">扣除 (午+晚)</span><span class="val" id="previewDeduct">—</span></div>
+            <div class="item"><span class="lbl">净工时</span><span class="val" id="previewNet">—</span></div>
+            <div class="item"><span class="lbl">加班时长 &#11088;</span><span class="val overtime-val" id="previewOT">—</span></div>
+        </div>
+    </div>
+
+    <!-- 记录列表 -->
+    <div class="card">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+            <span>&#128195; 加班记录</span>
+            <div style="display:flex;align-items:center;gap:16px;">
+                <div class="total-box" style="padding:10px 20px;min-width:auto;">
+                    <span class="label" style="font-size:0.8em;">总加班时长</span>
+                    <span class="number" style="font-size:1.6em;" id="totalOT">0.0 h</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 月份翻页 -->
+        <div style="display:flex;align-items:center;justify-content:center;gap:16px;padding:12px 0;border-bottom:1px solid #f0f0f0;margin-bottom:8px;">
+            <button class="btn btn-sm btn-outline" onclick="prevMonth()" title="上个月">&#9664; 上个月</button>
+            <span id="viewMonthLabel" style="font-size:1.15em;font-weight:700;color:#333;min-width:130px;text-align:center;">2026年6月</span>
+            <button class="btn btn-sm btn-outline" onclick="nextMonth()" title="下个月">下个月 &#9654;</button>
+            <button class="btn btn-sm btn-outline" onclick="goToCurrentMonth()" style="margin-left:12px;">&#128197; 本月</button>
+        </div>
+
+        <div style="overflow-x:auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>日期</th>
+                    <th>类型</th>
+                    <th>上班</th>
+                    <th>下班</th>
+                    <th>工作时长</th>
+                    <th>扣除</th>
+                    <th>净工时</th>
+                    <th>加班时长</th>
+                    <th>备注</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="entryTableBody">
+                <tr><td colspan="10" style="text-align:center;color:#aaa;padding:40px 0;">
+                    <div style="font-size:2em;margin-bottom:8px;">&#128203;</div>
+                    <div>还没有加班记录</div>
+                    <div style="font-size:0.85em;margin-top:4px;">在上方选择日期和时间，点击「添加记录」开始</div>
+                </td></tr>
+            </tbody>
+        </table>
+        </div>
+
+        <!-- 月度统计 -->
+        <div style="display:flex;justify-content:center;gap:24px;padding:10px 0;font-size:0.9em;color:#666;border-top:1px solid #f0f0f0;margin-top:8px;">
+            <span>当月记录：<strong id="monthCount">0</strong> 条</span>
+            <span>当月加班：<strong style="color:#e74c3c;" id="monthOT">0.0 h</strong></span>
+            <span>全部加班：<strong style="color:#e74c3c;" id="allOT">0.0 h</strong></span>
+        </div>
+
+        <div class="export-btns">
+            <button class="btn btn-sm btn-outline" onclick="exportData()">&#128229; 导出 Excel</button>
+            <button class="btn btn-sm btn-outline" onclick="importDataPrompt()">&#128228; 导入 Excel</button>
+            <span style="font-size:0.75em;color:#999;">导入格式：日期 | 上班时间 | 下班时间 | (可选)备注</span>
+            <button class="btn btn-sm btn-del" onclick="clearAll()">&#128465; 清空全部</button>
+        </div>
+    </div>
+</div>
+
+<!-- 使用说明 -->
+<div class="card">
+    <div class="card-title collapsible-header" onclick="toggleGuidePanel()">
+        <span>&#128214; 使用说明</span>
+        <span class="collapse-arrow" id="guidePanelArrow">&#9660;</span>
+    </div>
+    <div id="guidePanel" style="display:none;">
+        <div class="guide-step">
+            <div class="step-num">1</div>
+            <div class="step-content">
+                <strong>设置默认参数</strong><br>
+                在顶部「默认设置」中配置常用上下班时间、午休和晚餐扣除时长。保存后每次打开自动填充。
+            </div>
+        </div>
+        <div class="guide-step">
+            <div class="step-num">2</div>
+            <div class="step-content">
+                <strong>添加每日记录</strong><br>
+                选择日期、填写实际上班/下班时间。系统会根据<b>法定节假日库</b>自动判断该日是工作日还是休息日，并采用对应的加班计算规则。
+            </div>
+        </div>
+        <div class="guide-step">
+            <div class="step-num">3</div>
+            <div class="step-content">
+                <strong>维护节假日数据</strong><br>
+                在「节假日管理」卡片中可查看、添加、删除法定节假日和调休补班日。内置了 2025-2026 年数据，建议每年底更新下一年数据以确保自动判断准确。
+            </div>
+        </div>
+        <div class="guide-step">
+            <div class="step-num">4</div>
+            <div class="step-content">
+                <strong>计算规则</strong><br>
+                <span style="color:#2e7d32;">工作日：</span>净工时 = 工作时长 − 午餐扣除 − 晚餐扣除，加班 = max(0, 净工时 − 8h)<br>
+                <span style="color:#c62828;">休息日：</span>加班 = 工作时长 − 午餐/晚餐按实际重叠扣除，全部计为加班<br>
+                加班不足 0.5h 不计，向下取整到 0.5h。
+            </div>
+        </div>
+        <div class="guide-step">
+            <div class="step-num">5</div>
+            <div class="step-content">
+                <strong>数据安全</strong><br>
+                所有数据保存在浏览器本地 (<code>localStorage</code>)，不会上传到任何服务器。建议定期使用「导出数据」备份。清除浏览器缓存可能导致数据丢失。
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 部署建议 -->
+<div class="card">
+    <div class="card-title collapsible-header" onclick="toggleDeployPanel()">
+        <span>&#127760; 如何分享给他人使用</span>
+        <span class="collapse-arrow" id="deployPanelArrow">&#9660;</span>
+    </div>
+    <div id="deployPanel" style="display:none;">
+        <p style="font-size:0.88em;color:#555;margin-bottom:14px;">
+            这个页面是一个纯 HTML 文件，无需服务器，以下三种方式均可分享给他人：
+        </p>
+        <div class="deploy-options">
+            <div class="deploy-card">
+                <div class="deploy-icon">&#128230;</div>
+                <h4>直接发送文件</h4>
+                <p>将 <code>.html</code> 文件通过微信/邮件发送，接收方用浏览器打开即可使用。最简单快捷。</p>
+            </div>
+            <div class="deploy-card">
+                <div class="deploy-icon">&#127758;</div>
+                <h4>GitHub Pages</h4>
+                <p>上传到 GitHub 仓库，开启 Pages 功能即可获得永久网址。免费、无需域名。</p>
+            </div>
+            <div class="deploy-card">
+                <div class="deploy-icon">&#9925;</div>
+                <h4>Netlify Drop</h4>
+                <p>拖拽文件到 <a href="https://app.netlify.com/drop" target="_blank" rel="noopener">netlify.com/drop</a> 即可获得网址，零配置。</p>
+            </div>
+        </div>
+        <p style="font-size:0.8em;color:#999;margin-top:12px;">
+            &#128161; 无论哪种方式，每个人的数据都独立保存在自己的浏览器中，互不影响。
+        </p>
+    </div>
+</div>
+
+<!-- 编辑弹窗 -->
+<div class="modal-overlay" id="editModal">
+    <div class="modal">
+        <h3>&#9999;&#65039; 编辑记录</h3>
+        <div class="form-group" style="margin-bottom:12px;">
+            <label>日期</label>
+            <input type="date" id="editDate" style="width:100%;">
+        </div>
+        <div class="form-row" style="margin-bottom:12px;">
+            <div class="form-group"><label>上班时间</label><input type="time" id="editStart"></div>
+            <div class="form-group"><label>下班时间</label><input type="time" id="editEnd"></div>
+            <div class="form-group" style="justify-content:flex-end;">
+                <label>&nbsp;</label>
+                <div class="toggle-group">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="editDayoff">
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span class="toggle-label" id="editDayoffLabel">选择日期后自动判断</span>
+                </div>
+            </div>
+        </div>
+        <div class="form-group" style="margin-bottom:16px;">
+            <label>备注</label>
+            <input type="text" id="editRemark" style="width:100%;">
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;">
+            <button class="btn btn-outline" onclick="closeEditModal()">取消</button>
+            <button class="btn btn-primary" onclick="saveEdit()">&#128190; 保存修改</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ==================== 数据存储 ====================
+var STORAGE_KEY = 'overtime_calculator_data';
+var SETTINGS_KEY = 'overtime_calculator_settings';
+var HOLIDAYS_KEY = 'overtime_calculator_holidays';
+var editId = null;
+var manualDayoffOverride = false;  // 用户手动切换了休息日开关，覆盖自动判断
+var viewYear = null;   // 当前查看的年（null=本月）
+var viewMonth = null;  // 当前查看的月（null=本月，0=1月...11=12月）
+
+function getEntries() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+    catch(e) { return []; }
+}
+
+function saveEntries(entries) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+}
+
+// ==================== 中国法定节假日 ====================
+// 数据来源：国务院办公厅放假安排通知
+// 格式：holidays = 法定放假日（休息），makeupDays = 调休补班日（周末但上班）
+// 如需更新后续年份，在此处添加即可
+function getHolidayData() {
+    // 优先从 localStorage 读取用户自定义的节假日数据
+    try {
+        var saved = JSON.parse(localStorage.getItem(HOLIDAYS_KEY));
+        if (saved && saved.holidays && saved.makeupDays) return saved;
+    } catch(e) {}
+
+    // 内置默认数据
+    return {
+        holidays: [
+            // === 2025年 ===
+            // 元旦：1月1日
+            '2025-01-01',
+            // 春节：1月28日(除夕) - 2月4日(初七)
+            '2025-01-28','2025-01-29','2025-01-30','2025-01-31','2025-02-01','2025-02-02','2025-02-03','2025-02-04',
+            // 清明节：4月4日-6日
+            '2025-04-04','2025-04-05','2025-04-06',
+            // 劳动节：5月1日-5日
+            '2025-05-01','2025-05-02','2025-05-03','2025-05-04','2025-05-05',
+            // 端午节：5月31日-6月2日
+            '2025-05-31','2025-06-01','2025-06-02',
+            // 中秋节+国庆节：10月1日-8日
+            '2025-10-01','2025-10-02','2025-10-03','2025-10-04','2025-10-05','2025-10-06','2025-10-07','2025-10-08',
+
+            // === 2026年 ===
+            // 元旦：1月1日-3日
+            '2026-01-01','2026-01-02','2026-01-03',
+            // 春节：2月15日(除夕)-2月23日(初七)  — 2026年正月初一=2月17日
+            '2026-02-15','2026-02-16','2026-02-17','2026-02-18','2026-02-19','2026-02-20','2026-02-21','2026-02-22','2026-02-23',
+            // 清明节：4月4日-6日
+            '2026-04-04','2026-04-05','2026-04-06',
+            // 劳动节：5月1日-5日
+            '2026-05-01','2026-05-02','2026-05-03','2026-05-04','2026-05-05',
+            // 端午节：6月19日-21日（农历五月初五≈6月19日）
+            '2026-06-19','2026-06-20','2026-06-21',
+            // 中秋节：9月25日-27日（农历八月十五≈9月25日）
+            '2026-09-25','2026-09-26','2026-09-27',
+            // 国庆节：10月1日-7日
+            '2026-10-01','2026-10-02','2026-10-03','2026-10-04','2026-10-05','2026-10-06','2026-10-07',
+
+            // === 2027年（预排） ===
+            // 元旦：1月1日-3日
+            '2027-01-01','2027-01-02','2027-01-03',
+            // 春节：2月4日(除夕)-2月12日(初七) — 2027年正月初一≈2月5日...
+            // 此处仅放占位，待国务院公布后更新
+        ],
+        makeupDays: [
+            // === 2025年调休补班 ===
+            '2025-01-26', // 春节前补班（周日）
+            '2025-02-08', // 春节后补班（周六）
+            '2025-04-27', // 劳动节补班（周日）
+            '2025-09-28', // 国庆节补班（周日）
+            '2025-10-11', // 国庆节补班（周六）
+
+            // === 2026年调休补班（预估） ===
+            '2026-02-14', // 春节前补班（周六）
+            '2026-02-28', // 春节后补班（周六）
+            '2026-04-26', // 劳动节前补班（周日）
+            '2026-05-09', // 劳动节后补班（周六）
+            '2026-09-20', // 中秋节前补班（周日）
+            '2026-09-27', // 国庆节补班（周日）— 注：如与中秋重叠则调整
+            '2026-10-10', // 国庆节补班（周六）
+        ]
+    };
+}
+
+// 判断是否为休息日（周末 or 法定节假日，排除调休补班）
+function isAutoRestDay(dateStr) {
+    if (!dateStr) return false;
+
+    var d = new Date(dateStr + 'T00:00:00');
+    if (isNaN(d.getTime())) return false;
+
+    var dayOfWeek = d.getDay(); // 0=周日, 6=周六
+    var data = getHolidayData();
+
+    // 1. 调休补班日：强制算工作日（即使原本是周末）
+    if (data.makeupDays.indexOf(dateStr) !== -1) {
+        return false;
+    }
+
+    // 2. 法定节假日：休息日
+    if (data.holidays.indexOf(dateStr) !== -1) {
+        return true;
+    }
+
+    // 3. 周末（周六/周日）算休息日
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+        return true;
+    }
+
+    // 4. 其他：工作日
+    return false;
+}
+
+// 获取日期类型描述
+function getDayTypeDescription(dateStr) {
+    if (!dateStr) return '';
+    var data = getHolidayData();
+    if (data.holidays.indexOf(dateStr) !== -1) return '法定节假日 🎉';
+    if (data.makeupDays.indexOf(dateStr) !== -1) return '调休补班日 💼';
+    var d = new Date(dateStr + 'T00:00:00');
+    if (!isNaN(d.getTime())) {
+        var dow = d.getDay();
+        if (dow === 0) return '周日';
+        if (dow === 6) return '周六';
+    }
+    return '工作日';
+}
+
+// ==================== 节假日数据管理 ====================
+function saveHolidayData(data) {
+    localStorage.setItem(HOLIDAYS_KEY, JSON.stringify(data));
+}
+
+function getDefaultHolidayData() {
+    // 不包含任何 localStorage 逻辑的纯内置数据
+    return {
+        holidays: [
+            // === 2025年 ===
+            '2025-01-01',
+            '2025-01-28','2025-01-29','2025-01-30','2025-01-31','2025-02-01','2025-02-02','2025-02-03','2025-02-04',
+            '2025-04-04','2025-04-05','2025-04-06',
+            '2025-05-01','2025-05-02','2025-05-03','2025-05-04','2025-05-05',
+            '2025-05-31','2025-06-01','2025-06-02',
+            '2025-10-01','2025-10-02','2025-10-03','2025-10-04','2025-10-05','2025-10-06','2025-10-07','2025-10-08',
+            // === 2026年 ===
+            '2026-01-01','2026-01-02','2026-01-03',
+            '2026-02-15','2026-02-16','2026-02-17','2026-02-18','2026-02-19','2026-02-20','2026-02-21','2026-02-22','2026-02-23',
+            '2026-04-04','2026-04-05','2026-04-06',
+            '2026-05-01','2026-05-02','2026-05-03','2026-05-04','2026-05-05',
+            '2026-06-19','2026-06-20','2026-06-21',
+            '2026-09-25','2026-09-26','2026-09-27',
+            '2026-10-01','2026-10-02','2026-10-03','2026-10-04','2026-10-05','2026-10-06','2026-10-07',
+            // === 2027年 ===
+            '2027-01-01','2027-01-02','2027-01-03',
+        ],
+        makeupDays: [
+            '2025-01-26','2025-02-08','2025-04-27','2025-09-28','2025-10-11',
+            '2026-02-14','2026-02-28','2026-04-26','2026-05-09','2026-09-20','2026-09-27','2026-10-10',
+        ]
+    };
+}
+
+// 切换节假日管理面板
+function toggleHolidayPanel() {
+    var panel = document.getElementById('holidayPanel');
+    var arrow = document.getElementById('holidayPanelArrow');
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        arrow.classList.add('open');
+        renderHolidayPanel();
+    } else {
+        panel.style.display = 'none';
+        arrow.classList.remove('open');
+    }
+}
+
+// 获取所有年份列表
+function getAllHolidayYears() {
+    var data = getHolidayData();
+    var years = {};
+    var allDates = data.holidays.concat(data.makeupDays);
+    for (var i = 0; i < allDates.length; i++) {
+        var y = allDates[i].substring(0, 4);
+        years[y] = true;
+    }
+    var result = Object.keys(years).sort();
+    return result;
+}
+
+// 渲染节假日管理面板
+function renderHolidayPanel() {
+    var data = getHolidayData();
+    var filterYear = document.getElementById('holidayYearFilter').value;
+    var years = getAllHolidayYears();
+
+    // 更新年份筛选下拉
+    var select = document.getElementById('holidayYearFilter');
+    var currentVal = select.value;
+    var optionsHtml = '<option value="all">全部年份</option>';
+    for (var i = 0; i < years.length; i++) {
+        var sel = (currentVal === years[i]) ? ' selected' : '';
+        optionsHtml += '<option value="' + years[i] + '"' + sel + '>' + years[i] + '年 (' + countYearDates(data, years[i]) + '天)</option>';
+    }
+    select.innerHTML = optionsHtml;
+
+    // 根据年份过滤
+    var filteredHolidays = data.holidays.filter(function(d) {
+        return filterYear === 'all' || d.substring(0, 4) === filterYear;
+    }).sort();
+    var filteredMakeup = data.makeupDays.filter(function(d) {
+        return filterYear === 'all' || d.substring(0, 4) === filterYear;
+    }).sort();
+
+    // 渲染法定节假日列表
+    var holidayHtml = '';
+    if (filteredHolidays.length === 0) {
+        holidayHtml = '<div style="text-align:center;color:#aaa;padding:16px;">暂无数据，在下方添加</div>';
+    } else {
+        for (var j = 0; j < filteredHolidays.length; j++) {
+            var d = filteredHolidays[j];
+            var desc = getDayTypeDescription(d);
+            holidayHtml += '<div class="holiday-item">';
+            holidayHtml += '<span class="date-text">' + d + ' <span style="font-size:0.85em;color:#c62828;">' + escapeHtml(desc) + '</span></span>';
+            holidayHtml += '<button class="btn-del-sm" onclick="deleteHoliday(\'' + d + '\')" title="删除">&#10005;</button>';
+            holidayHtml += '</div>';
+        }
+    }
+    document.getElementById('holidayListContainer').innerHTML = holidayHtml;
+
+    // 渲染调休补班日列表
+    var makeupHtml = '';
+    if (filteredMakeup.length === 0) {
+        makeupHtml = '<div style="text-align:center;color:#aaa;padding:16px;">暂无数据，在下方添加</div>';
+    } else {
+        for (var k = 0; k < filteredMakeup.length; k++) {
+            var dm = filteredMakeup[k];
+            var descM = getDayTypeDescription(dm);
+            makeupHtml += '<div class="holiday-item">';
+            makeupHtml += '<span class="date-text">' + dm + ' <span style="font-size:0.85em;color:#2e7d32;">' + escapeHtml(descM) + '</span></span>';
+            makeupHtml += '<button class="btn-del-sm" onclick="deleteMakeupDay(\'' + dm + '\')" title="删除">&#10005;</button>';
+            makeupHtml += '</div>';
+        }
+    }
+    document.getElementById('makeupListContainer').innerHTML = makeupHtml;
+}
+
+function countYearDates(data, year) {
+    var count = 0;
+    for (var i = 0; i < data.holidays.length; i++) {
+        if (data.holidays[i].substring(0, 4) === year) count++;
+    }
+    for (var j = 0; j < data.makeupDays.length; j++) {
+        if (data.makeupDays[j].substring(0, 4) === year) count++;
+    }
+    return count;
+}
+
+function addHoliday() {
+    var dateVal = document.getElementById('newHolidayDate').value;
+    if (!dateVal) { showToast('⚠️ 请先选择日期', '#e74c3c'); return; }
+    var data = getHolidayData();
+    if (data.holidays.indexOf(dateVal) !== -1) {
+        showToast('⚠️ 该法定节假日已存在', '#e74c3c');
+        return;
+    }
+    // 如果该日在调休补班中，先移除
+    var muIdx = data.makeupDays.indexOf(dateVal);
+    if (muIdx !== -1) {
+        data.makeupDays.splice(muIdx, 1);
+    }
+    data.holidays.push(dateVal);
+    data.holidays.sort();
+    saveHolidayData(data);
+    document.getElementById('newHolidayDate').value = '';
+    renderHolidayPanel();
+    updatePreview();
+    renderTable();
+    showToast('✅ 已添加法定节假日：' + dateVal);
+}
+
+function addMakeupDay() {
+    var dateVal = document.getElementById('newMakeupDate').value;
+    if (!dateVal) { showToast('⚠️ 请先选择日期', '#e74c3c'); return; }
+    var data = getHolidayData();
+    if (data.makeupDays.indexOf(dateVal) !== -1) {
+        showToast('⚠️ 该调休补班日已存在', '#e74c3c');
+        return;
+    }
+    // 如果该日在法定节假日中，先移除
+    var holIdx = data.holidays.indexOf(dateVal);
+    if (holIdx !== -1) {
+        data.holidays.splice(holIdx, 1);
+    }
+    data.makeupDays.push(dateVal);
+    data.makeupDays.sort();
+    saveHolidayData(data);
+    document.getElementById('newMakeupDate').value = '';
+    renderHolidayPanel();
+    updatePreview();
+    renderTable();
+    showToast('✅ 已添加调休补班日：' + dateVal);
+}
+
+function deleteHoliday(dateStr) {
+    if (!confirm('确认删除法定节假日 ' + dateStr + '？')) return;
+    var data = getHolidayData();
+    var idx = data.holidays.indexOf(dateStr);
+    if (idx !== -1) {
+        data.holidays.splice(idx, 1);
+        saveHolidayData(data);
+        renderHolidayPanel();
+        updatePreview();
+        renderTable();
+        showToast('🗑 已删除：' + dateStr);
+    }
+}
+
+function deleteMakeupDay(dateStr) {
+    if (!confirm('确认删除调休补班日 ' + dateStr + '？')) return;
+    var data = getHolidayData();
+    var idx = data.makeupDays.indexOf(dateStr);
+    if (idx !== -1) {
+        data.makeupDays.splice(idx, 1);
+        saveHolidayData(data);
+        renderHolidayPanel();
+        updatePreview();
+        renderTable();
+        showToast('🗑 已删除：' + dateStr);
+    }
+}
+
+function resetHolidayData() {
+    if (!confirm('确认恢复为内置默认节假日数据？这将覆盖你添加的所有自定义节假日。')) return;
+    var defaults = getDefaultHolidayData();
+    saveHolidayData(defaults);
+    renderHolidayPanel();
+    updatePreview();
+    renderTable();
+    showToast('✅ 已恢复为默认节假日数据');
+}
+
+// 切换使用说明面板
+function toggleGuidePanel() {
+    var panel = document.getElementById('guidePanel');
+    var arrow = document.getElementById('guidePanelArrow');
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        arrow.classList.add('open');
+    } else {
+        panel.style.display = 'none';
+        arrow.classList.remove('open');
+    }
+}
+
+// 切换部署建议面板
+function toggleDeployPanel() {
+    var panel = document.getElementById('deployPanel');
+    var arrow = document.getElementById('deployPanelArrow');
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        arrow.classList.add('open');
+    } else {
+        panel.style.display = 'none';
+        arrow.classList.remove('open');
+    }
+}
+
+function getSettings() {
+    try {
+        var s = JSON.parse(localStorage.getItem(SETTINGS_KEY));
+        var defaults = { defaultStart: '09:15', defaultEnd: '18:30', lunch: 1.25, dinner: 0.5 };
+        if (!s) return defaults;
+        for (var key in defaults) { if (!(key in s)) s[key] = defaults[key]; }
+        return s;
+    } catch(e) {
+        return { defaultStart: '09:15', defaultEnd: '18:30', lunch: 1.25, dinner: 0.5 };
+    }
+}
+
+function saveSettingsToStorage(settings) {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+// ==================== 核心计算 ====================
+function timeToMinutes(timeStr) {
+    var parts = timeStr.split(':');
+    return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+}
+
+function calculateOvertime(startTimeStr, endTimeStr, isWorkday) {
+    // 兼容旧数据：未传 isWorkday 或为 undefined 时默认 true（工作日）
+    if (isWorkday === undefined || isWorkday === null) isWorkday = true;
+
+    var settings = getSettings();
+    var startMin = timeToMinutes(startTimeStr);
+    var endMin = timeToMinutes(endTimeStr);
+
+    // 工作时长（小时）
+    var totalHours = (endMin - startMin) / 60;
+
+    var lunchDeduction, dinnerDeduction, totalDeduction, netHours, overtimeRaw, standardHours;
+
+    if (isWorkday) {
+        // ========== 工作日逻辑 ==========
+        // 午餐：固定扣除
+        lunchDeduction = settings.lunch;
+
+        // 晚餐：18:30~19:00 为晚餐时段，这段时间不算工作时间，按实际重叠扣除
+        var dinnerStartMin = timeToMinutes('18:30');
+        var dinnerEndMin = timeToMinutes('19:00');
+        var dinnerOverlap = 0;
+        if (startMin < dinnerEndMin && endMin > dinnerStartMin) {
+            dinnerOverlap = Math.min(endMin, dinnerEndMin) - Math.max(startMin, dinnerStartMin);
+        }
+        dinnerDeduction = Math.min(dinnerOverlap / 60, settings.dinner);  // 转为小时，上限为设置值
+
+        totalDeduction = lunchDeduction + dinnerDeduction;
+        netHours = totalHours - totalDeduction;
+        standardHours = 8.0;
+        overtimeRaw = Math.max(0, netHours - standardHours);
+    } else {
+        // ========== 休息日逻辑 ==========
+        // 午餐：仅当工作时间段与 12:00~13:15 有重叠时，按实际重叠扣除
+        var lunchStartMin = timeToMinutes('12:00');
+        var lunchEndMin = timeToMinutes('13:15');
+        var lunchOverlap = 0;
+        if (startMin < lunchEndMin && endMin > lunchStartMin) {
+            lunchOverlap = Math.min(endMin, lunchEndMin) - Math.max(startMin, lunchStartMin);
+        }
+        lunchDeduction = lunchOverlap / 60;  // 转为小时
+
+        // 晚餐：18:30~19:00 为晚餐时段，按实际重叠扣除
+        var dinnerStartMin2 = timeToMinutes('18:30');
+        var dinnerEndMin2 = timeToMinutes('19:00');
+        var dinnerOverlap2 = 0;
+        if (startMin < dinnerEndMin2 && endMin > dinnerStartMin2) {
+            dinnerOverlap2 = Math.min(endMin, dinnerEndMin2) - Math.max(startMin, dinnerStartMin2);
+        }
+        dinnerDeduction = Math.min(dinnerOverlap2 / 60, settings.dinner);
+
+        totalDeduction = lunchDeduction + dinnerDeduction;
+        netHours = totalHours - totalDeduction;
+        standardHours = 0;  // 休息日不扣标准工时
+        overtimeRaw = Math.max(0, netHours);  // 全部计为加班
+    }
+
+    // 不足0.5小时不计，向下取整到0.5小时
+    var overtime;
+    if (overtimeRaw < 0.5) {
+        overtime = 0.0;
+    } else {
+        overtime = Math.floor(overtimeRaw * 2) / 2;
+    }
+
+    return {
+        totalHours: Math.round(totalHours * 100) / 100,
+        lunchDeduction: Math.round(lunchDeduction * 100) / 100,
+        dinnerDeduction: Math.round(dinnerDeduction * 100) / 100,
+        totalDeduction: Math.round(totalDeduction * 100) / 100,
+        netHours: Math.round(netHours * 100) / 100,
+        overtimeRaw: Math.round(overtimeRaw * 100) / 100,
+        overtime: overtime,
+        standardHours: standardHours,
+        isWorkday: isWorkday
+    };
+}
+
+// ==================== 界面更新 ====================
+function updatePreview() {
+    var start = document.getElementById('inputStart').value;
+    var end = document.getElementById('inputEnd').value;
+    if (!start || !end) return;
+
+    var isWorkday = !document.getElementById('inputDayoff').checked;
+    var result = calculateOvertime(start, end, isWorkday);
+
+    // 日期类型（显示自动判断结果）
+    var typeEl = document.getElementById('previewType');
+    var dateStr = document.getElementById('inputDate').value;
+    var autoDesc = dateStr ? getDayTypeDescription(dateStr) : '';
+    if (isWorkday) {
+        typeEl.textContent = '工作日' + (autoDesc ? ' (' + autoDesc + ')' : '');
+        typeEl.style.color = '#2e7d32';
+    } else {
+        typeEl.textContent = '休息日' + (autoDesc ? ' (' + autoDesc + ')' : '');
+        typeEl.style.color = '#c62828';
+    }
+
+    document.getElementById('previewTotal').textContent = result.totalHours.toFixed(2) + 'h';
+    document.getElementById('previewDeduct').textContent = result.totalDeduction.toFixed(2) + 'h';
+    document.getElementById('previewNet').textContent = result.netHours.toFixed(2) + 'h';
+
+    // 标准工时显示
+    var stdEl = document.getElementById('previewStd');
+    var stdItem = document.getElementById('previewStdItem');
+    if (isWorkday) {
+        stdEl.textContent = '8.0h';
+        stdItem.style.display = '';
+    } else {
+        stdEl.textContent = '0h (休息日)';
+    }
+
+    var otEl = document.getElementById('previewOT');
+    if (result.overtime > 0) {
+        otEl.textContent = result.overtime.toFixed(1) + 'h 🔥';
+        otEl.style.color = '#e74c3c';
+    } else {
+        otEl.textContent = '0h';
+        otEl.style.color = '#999';
+    }
+}
+
+// ==================== 月份翻页 ====================
+function getViewMonth() {
+    // 如果未设置，默认当前月
+    if (viewYear === null || viewMonth === null) {
+        var now = new Date();
+        viewYear = now.getFullYear();
+        viewMonth = now.getMonth(); // 0=1月
+    }
+    return { year: viewYear, month: viewMonth };
+}
+
+function setViewMonth(year, month) {
+    viewYear = year;
+    viewMonth = month;
+}
+
+function updateMonthLabel() {
+    var vm = getViewMonth();
+    var label = document.getElementById('viewMonthLabel');
+    if (label) {
+        label.textContent = vm.year + '年' + (vm.month + 1) + '月';
+    }
+}
+
+function prevMonth() {
+    var vm = getViewMonth();
+    if (vm.month === 0) {
+        setViewMonth(vm.year - 1, 11);
+    } else {
+        setViewMonth(vm.year, vm.month - 1);
+    }
+    renderTable();
+}
+
+function nextMonth() {
+    var vm = getViewMonth();
+    if (vm.month === 11) {
+        setViewMonth(vm.year + 1, 0);
+    } else {
+        setViewMonth(vm.year, vm.month + 1);
+    }
+    renderTable();
+}
+
+function goToCurrentMonth() {
+    var now = new Date();
+    setViewMonth(now.getFullYear(), now.getMonth());
+    renderTable();
+}
+
+function renderTable() {
+    var entries = getEntries();
+    var tbody = document.getElementById('entryTableBody');
+    var vm = getViewMonth();
+    updateMonthLabel();
+
+    // 计算当月和全部加班时长
+    var monthTotalOT = 0;
+    var allTotalOT = 0;
+
+    // 筛选当月记录（保留原始索引）
+    var monthEntries = [];
+    for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        var isWorkday = (e.is_workday === undefined || e.is_workday === null) ? true : e.is_workday;
+        var calc = calculateOvertime(e.start_time, e.end_time, isWorkday);
+        allTotalOT += calc.overtime;
+
+        // 解析日期判断是否属于当月
+        var parts = e.date.split('-');
+        if (parts.length === 3) {
+            var entryYear = parseInt(parts[0]);
+            var entryMonth = parseInt(parts[1]) - 1; // 0-indexed
+            if (entryYear === vm.year && entryMonth === vm.month) {
+                monthTotalOT += calc.overtime;
+                monthEntries.push({ entry: e, index: i, calc: calc, isWorkday: isWorkday });
+            }
+        }
+    }
+
+    // 更新统计栏
+    document.getElementById('monthCount').textContent = monthEntries.length;
+    document.getElementById('monthOT').textContent = monthTotalOT.toFixed(1) + ' h';
+    document.getElementById('allOT').textContent = allTotalOT.toFixed(1) + ' h';
+    document.getElementById('totalOT').textContent = allTotalOT.toFixed(1) + ' h';
+
+    // 空当月
+    if (monthEntries.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#aaa;padding:40px 0;"><div style="font-size:2em;margin-bottom:8px;">&#128197;</div><div>' + vm.year + '年' + (vm.month + 1) + '月没有加班记录</div><div style="font-size:0.85em;margin-top:4px;">翻页查看其他月份，或在添加记录时选择该月日期</div></td></tr>';
+        return;
+    }
+
+    var html = '';
+    for (var j = 0; j < monthEntries.length; j++) {
+        var me = monthEntries[j];
+        var e = me.entry;
+        var calc = me.calc;
+        var isWorkday = me.isWorkday;
+        var origIndex = me.index;  // 原始数组索引，用于编辑/删除
+
+        var rowClass = isWorkday ? '' : 'dayoff-row';
+        var dayDesc = getDayTypeDescription(e.date);
+        var typeBadge = isWorkday
+            ? '<span class="badge badge-workday">工作日</span> <span style="font-size:0.75em;color:#888;">' + escapeHtml(dayDesc) + '</span>'
+            : '<span class="badge badge-dayoff">休息日</span> <span style="font-size:0.75em;color:#888;">' + escapeHtml(dayDesc) + '</span>';
+        var otClass = calc.overtime > 0 ? 'ot-cell' : 'no-ot';
+        var otDisplay = calc.overtime > 0 ? calc.overtime.toFixed(1) + 'h 🔥' : '0h';
+        var remark = e.remark || '—';
+
+        html += '<tr class="' + rowClass + '">';
+        html += '<td><strong>' + escapeHtml(e.date) + '</strong></td>';
+        html += '<td>' + typeBadge + '</td>';
+        html += '<td>' + escapeHtml(e.start_time) + '</td>';
+        html += '<td>' + escapeHtml(e.end_time) + '</td>';
+        html += '<td>' + calc.totalHours.toFixed(2) + 'h</td>';
+        html += '<td>' + calc.totalDeduction.toFixed(2) + 'h</td>';
+        html += '<td>' + calc.netHours.toFixed(2) + 'h</td>';
+        html += '<td class="' + otClass + '">' + otDisplay + '</td>';
+        html += '<td>' + escapeHtml(remark) + '</td>';
+        html += '<td>';
+        html += '<button class="btn btn-sm btn-edit" onclick="openEdit(' + origIndex + ')">&#9999;</button> ';
+        html += '<button class="btn btn-sm btn-del" onclick="deleteEntry(' + origIndex + ')">&#128465;</button>';
+        html += '</td>';
+        html += '</tr>';
+    }
+
+    tbody.innerHTML = html;
+}
+
+function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+// ==================== 操作 ====================
+function addEntry() {
+    var date = document.getElementById('inputDate').value;
+    var start = document.getElementById('inputStart').value;
+    var end = document.getElementById('inputEnd').value;
+    var isWorkday = !document.getElementById('inputDayoff').checked;
+    var remark = document.getElementById('inputRemark').value.trim();
+
+    if (!date || !start || !end) {
+        showToast('⚠️ 请填写日期、上班时间和下班时间', '#e74c3c');
+        return;
+    }
+
+    var entries = getEntries();
+    entries.push({
+        date: date,
+        start_time: start,
+        end_time: end,
+        is_workday: isWorkday,
+        remark: remark
+    });
+
+    // 按日期降序排列
+    entries.sort(function(a, b) {
+        if (a.date > b.date) return -1;
+        if (a.date < b.date) return 1;
+        return 0;
+    });
+
+    saveEntries(entries);
+
+    // 自动跳到记录所在月份
+    var dateParts = date.split('-');
+    if (dateParts.length === 3) {
+        setViewMonth(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1);
+    }
+    renderTable();
+
+    // 清空备注，重置手动覆盖标记，重新自动判断（方便连续录入）
+    document.getElementById('inputRemark').value = '';
+    manualDayoffOverride = false;
+    onDateChange();  // 重新根据日期自动判断休息日
+    updatePreview();
+    showToast('✅ 记录已添加');
+}
+
+function deleteEntry(index) {
+    if (!confirm('确认删除这条记录？')) return;
+    var entries = getEntries();
+    entries.splice(index, 1);
+    saveEntries(entries);
+    renderTable();
+    showToast('🗑 记录已删除');
+}
+
+function openEdit(index) {
+    var entries = getEntries();
+    var e = entries[index];
+    editId = index;
+
+    // 兼容旧数据
+    var isWorkday = (e.is_workday === undefined || e.is_workday === null) ? true : e.is_workday;
+
+    document.getElementById('editDate').value = e.date;
+    document.getElementById('editStart').value = e.start_time;
+    document.getElementById('editEnd').value = e.end_time;
+    document.getElementById('editDayoff').checked = !isWorkday;
+    document.getElementById('editRemark').value = e.remark || '';
+
+    // 显示日期自动判断提示（但不覆盖已有手动设置）
+    var autoRest = isAutoRestDay(e.date);
+    var desc = getDayTypeDescription(e.date);
+    var oldHint = document.getElementById('editDateHint');
+    if (oldHint) oldHint.remove();
+    var hint = document.createElement('span');
+    hint.id = 'editDateHint';
+    hint.style.cssText = 'font-size:0.82em;margin-left:6px;font-weight:600;white-space:nowrap;';
+    if (autoRest) {
+        hint.textContent = '🔴 ' + desc;
+        hint.style.color = '#c62828';
+    } else {
+        hint.textContent = '🟢 ' + desc;
+        hint.style.color = '#2e7d32';
+    }
+    var dateInput = document.getElementById('editDate');
+    dateInput.parentNode.appendChild(hint);
+
+    updateEditDayoffLabel();
+    document.getElementById('editModal').classList.add('active');
+}
+
+function closeEditModal() {
+    editId = null;
+    document.getElementById('editModal').classList.remove('active');
+}
+
+function saveEdit() {
+    if (editId === null) return;
+
+    var entries = getEntries();
+    entries[editId].date = document.getElementById('editDate').value;
+    entries[editId].start_time = document.getElementById('editStart').value;
+    entries[editId].end_time = document.getElementById('editEnd').value;
+    entries[editId].is_workday = !document.getElementById('editDayoff').checked;
+    entries[editId].remark = document.getElementById('editRemark').value.trim();
+
+    // 重新排序
+    entries.sort(function(a, b) {
+        if (a.date > b.date) return -1;
+        if (a.date < b.date) return 1;
+        return 0;
+    });
+
+    saveEntries(entries);
+
+    // 自动跳到记录所在月份
+    var dateParts = document.getElementById('editDate').value.split('-');
+    if (dateParts.length === 3) {
+        setViewMonth(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1);
+    }
+    renderTable();
+    closeEditModal();
+    showToast('✅ 修改已保存');
+}
+
+function clearAll() {
+    if (!confirm('确认清空所有加班记录？此操作不可恢复！')) return;
+    localStorage.removeItem(STORAGE_KEY);
+    goToCurrentMonth();  // 回到本月
+    renderTable();
+    showToast('🗑 所有记录已清空');
+}
+
+// ==================== 设置 ====================
+function loadSettings() {
+    var s = getSettings();
+    document.getElementById('defaultStart').value = s.defaultStart;
+    document.getElementById('defaultEnd').value = s.defaultEnd;
+    document.getElementById('lunchDeduction').value = s.lunch;
+    document.getElementById('dinnerDeduction').value = s.dinner;
+    applyDefaultTimes();
+    updateRuleDisplay();
+    updateDayoffLabel();
+}
+
+function saveSettings() {
+    var s = {
+        defaultStart: document.getElementById('defaultStart').value,
+        defaultEnd: document.getElementById('defaultEnd').value,
+        lunch: parseFloat(document.getElementById('lunchDeduction').value) || 1.25,
+        dinner: parseFloat(document.getElementById('dinnerDeduction').value) || 0.5
+    };
+    saveSettingsToStorage(s);
+    applyDefaultTimes();
+    updateRuleDisplay();
+    updatePreview();
+    renderTable();
+    showToast('✅ 设置已保存');
+}
+
+function applyDefaultTimes() {
+    var s = getSettings();
+    document.getElementById('inputStart').value = s.defaultStart;
+    document.getElementById('inputEnd').value = s.defaultEnd;
+}
+
+function updateRuleDisplay() {
+    var s = getSettings();
+    document.getElementById('ruleLunch').textContent = s.lunch;
+    document.getElementById('ruleDinner').textContent = s.dinner;
+    document.getElementById('ruleDinner2').textContent = s.dinner;
+}
+
+// ==================== 休息日自动判断 ====================
+function onDateChange() {
+    var dateStr = document.getElementById('inputDate').value;
+    if (!dateStr) return;
+
+    var autoRest = isAutoRestDay(dateStr);
+    var desc = getDayTypeDescription(dateStr);
+
+    // 自动设置休息日开关（不标记为手动覆盖）
+    manualDayoffOverride = false;
+    document.getElementById('inputDayoff').checked = autoRest;
+
+    // 更新标签显示
+    updateDayoffLabel();
+
+    // 在日期输入框旁显示提示
+    updateDateHint(dateStr, autoRest, desc);
+
+    updatePreview();
+}
+
+function updateDayoffLabel() {
+    var isDayoff = document.getElementById('inputDayoff').checked;
+    var label = document.getElementById('dayoffLabel');
+    var dateStr = document.getElementById('inputDate').value;
+    var desc = dateStr ? getDayTypeDescription(dateStr) : '';
+
+    if (isDayoff) {
+        label.innerHTML = '休息日 <span style="font-size:0.75em;opacity:0.7;">(' + (desc || '手动') + ')</span>';
+        label.className = 'toggle-label dayoff';
+    } else {
+        label.innerHTML = '工作日 <span style="font-size:0.75em;opacity:0.7;">(' + (manualDayoffOverride ? '手动覆盖' : '自动') + ')</span>';
+        label.className = 'toggle-label';
+    }
+}
+
+function updateDateHint(dateStr, isRest, desc) {
+    // 移除旧提示
+    var oldHint = document.getElementById('dateHint');
+    if (oldHint) oldHint.remove();
+
+    if (!dateStr) return;
+
+    var hint = document.createElement('span');
+    hint.id = 'dateHint';
+    hint.style.cssText = 'font-size:0.82em;margin-left:6px;font-weight:600;white-space:nowrap;';
+
+    if (isRest) {
+        hint.textContent = '🔴 ' + desc;
+        hint.style.color = '#c62828';
+    } else {
+        hint.textContent = '🟢 ' + desc;
+        hint.style.color = '#2e7d32';
+    }
+
+    var dateInput = document.getElementById('inputDate');
+    dateInput.parentNode.appendChild(hint);
+}
+
+function onDayoffToggle() {
+    // 用户手动切换 = 覆盖自动判断
+    manualDayoffOverride = true;
+    updateDayoffLabel();
+    updatePreview();
+}
+
+function onEditDateChange() {
+    var dateStr = document.getElementById('editDate').value;
+    if (!dateStr) return;
+
+    var autoRest = isAutoRestDay(dateStr);
+    var desc = getDayTypeDescription(dateStr);
+
+    // 自动设置编辑弹窗的休息日开关
+    document.getElementById('editDayoff').checked = autoRest;
+
+    // 移除旧提示
+    var oldHint = document.getElementById('editDateHint');
+    if (oldHint) oldHint.remove();
+
+    var hint = document.createElement('span');
+    hint.id = 'editDateHint';
+    hint.style.cssText = 'font-size:0.82em;margin-left:6px;font-weight:600;white-space:nowrap;';
+
+    if (autoRest) {
+        hint.textContent = '🔴 ' + desc;
+        hint.style.color = '#c62828';
+    } else {
+        hint.textContent = '🟢 ' + desc;
+        hint.style.color = '#2e7d32';
+    }
+
+    var dateInput = document.getElementById('editDate');
+    dateInput.parentNode.appendChild(hint);
+
+    updateEditDayoffLabel();
+}
+
+function updateEditDayoffLabel() {
+    var checked = document.getElementById('editDayoff').checked;
+    var label = document.getElementById('editDayoffLabel');
+    var dateStr = document.getElementById('editDate').value;
+    var desc = dateStr ? getDayTypeDescription(dateStr) : '';
+
+    if (checked) {
+        label.innerHTML = '休息日 <span style="font-size:0.75em;opacity:0.7;">(' + desc + ')</span>';
+        label.className = 'toggle-label dayoff';
+    } else {
+        label.innerHTML = '工作日 <span style="font-size:0.75em;opacity:0.7;">(' + (desc || '自动') + ')</span>';
+        label.className = 'toggle-label';
+    }
+}
+
+function onEditDayoffToggle() {
+    updateEditDayoffLabel();
+}
+
+// ==================== 导入导出 ====================
+function exportData() {
+    var entries = getEntries();
+    var settings = getSettings();
+
+    // ========== Sheet1: 加班记录明细 ==========
+    var detailRows = [['日期', '类型', '上班时间', '下班时间', '工作时长(h)', '扣除(h)', '净工时(h)', '加班时长(h)', '备注']];
+    for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        var isWorkday = (e.is_workday === undefined || e.is_workday === null) ? true : e.is_workday;
+        var calc = calculateOvertime(e.start_time, e.end_time, isWorkday);
+        var dayType = isWorkday ? '工作日' : '休息日';
+        var dayDesc = getDayTypeDescription(e.date);
+        if (dayDesc && dayDesc !== '工作日' && dayDesc !== '周六' && dayDesc !== '周日') {
+            dayType += ' (' + dayDesc + ')';
+        }
+        detailRows.push([
+            e.date,
+            dayType,
+            e.start_time,
+            e.end_time,
+            calc.totalHours,
+            calc.totalDeduction,
+            calc.netHours,
+            calc.overtime,
+            e.remark || ''
+        ]);
+    }
+
+    // ========== Sheet2: 月度汇总 ==========
+    var summaryMap = {};
+    var allTotal = 0;
+    for (var j = 0; j < entries.length; j++) {
+        var ej = entries[j];
+        var isWd = (ej.is_workday === undefined || ej.is_workday === null) ? true : ej.is_workday;
+        var cj = calculateOvertime(ej.start_time, ej.end_time, isWd);
+        var monthKey = ej.date.substring(0, 7); // "2026-06"
+        if (!summaryMap[monthKey]) {
+            summaryMap[monthKey] = { count: 0, ot: 0 };
+        }
+        summaryMap[monthKey].count++;
+        summaryMap[monthKey].ot += cj.overtime;
+        allTotal += cj.overtime;
+    }
+
+    var summaryRows = [['月份', '记录条数', '加班总时长(h)']];
+    var months = Object.keys(summaryMap).sort();
+    for (var k = 0; k < months.length; k++) {
+        var sm = summaryMap[months[k]];
+        summaryRows.push([months[k], sm.count, parseFloat(sm.ot.toFixed(1))]);
+    }
+    summaryRows.push(['合计', entries.length, parseFloat(allTotal.toFixed(1))]);
+
+    // ========== Sheet3: 设置信息 ==========
+    var settingsRows = [
+        ['设置项', '值'],
+        ['默认上班时间', settings.defaultStart],
+        ['默认下班时间', settings.defaultEnd],
+        ['午餐扣除(小时)', settings.lunch],
+        ['晚餐扣除(小时)', settings.dinner],
+        ['导出时间', new Date().toLocaleString('zh-CN')]
+    ];
+
+    // 生成 Excel
+    var wb = XLSX.utils.book_new();
+    var wsDetail = XLSX.utils.aoa_to_sheet(detailRows);
+    var wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+    var wsSettings = XLSX.utils.aoa_to_sheet(settingsRows);
+
+    // 设置列宽
+    wsDetail['!cols'] = [
+        {wch: 12}, {wch: 16}, {wch: 10}, {wch: 10},
+        {wch: 13}, {wch: 10}, {wch: 12}, {wch: 13}, {wch: 20}
+    ];
+    wsSummary['!cols'] = [{wch: 12}, {wch: 12}, {wch: 16}];
+    wsSettings['!cols'] = [{wch: 20}, {wch: 20}];
+
+    XLSX.utils.book_append_sheet(wb, wsDetail, '加班记录明细');
+    XLSX.utils.book_append_sheet(wb, wsSummary, '月度汇总');
+    XLSX.utils.book_append_sheet(wb, wsSettings, '设置');
+
+    XLSX.writeFile(wb, '加班记录_' + new Date().toISOString().split('T')[0] + '.xlsx');
+    showToast('📥 Excel 已导出（3个工作表）');
+}
+
+function importDataPrompt() {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xlsx,.xls,.csv,.json';
+    input.onchange = function(e) {
+        var file = e.target.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function(ev) {
+            try {
+                var fileName = file.name.toLowerCase();
+                var entries = [];
+                var settings = null;
+
+                if (fileName.endsWith('.json')) {
+                    // 兼容旧的 JSON 格式
+                    var data = JSON.parse(ev.target.result);
+                    if (!data.entries || !Array.isArray(data.entries)) {
+                        throw new Error('JSON 数据格式错误');
+                    }
+                    entries = data.entries;
+                    settings = data.settings;
+                } else {
+                    // Excel / CSV 导入
+                    var wb = XLSX.read(ev.target.result, {type: 'array'});
+                    var sheetName = wb.SheetNames[0];
+                    var sheet = wb.Sheets[sheetName];
+                    // raw:true (默认) → 日期和时间保持为原始数字，由 normalizeDate/normalizeTime 统一解析，避免时区和格式问题
+                    var rows = XLSX.utils.sheet_to_json(sheet, {header: 1});
+
+                    if (!rows || rows.length === 0) {
+                        throw new Error('文件为空');
+                    }
+
+                    // 判断第一行是否为表头（包含"日期""上班""下班"等关键词）
+                    var firstRow = rows[0];
+                    var isHeader = false;
+                    if (firstRow && firstRow.length >= 3) {
+                        var r0 = String(firstRow[0] || '').trim();
+                        var r1 = String(firstRow[1] || '').trim();
+                        var r2 = String(firstRow[2] || '').trim();
+                        // 如果第一行包含这些关键词 → 是表头，跳过
+                        if ((r0.indexOf('日期') !== -1 || r0.indexOf('时间') !== -1 || r0 === 'date' || r0 === 'Date') ||
+                            (r1.indexOf('上班') !== -1 || r1.indexOf('开始') !== -1 || r1.indexOf('start') !== -1) ||
+                            (r2.indexOf('下班') !== -1 || r2.indexOf('结束') !== -1 || r2.indexOf('end') !== -1)) {
+                            isHeader = true;
+                        }
+                        // 如果第一行第一列是合法的日期格式 → 可能是数据，不是表头
+                        var dateCheck = normalizeDate(r0);
+                        if (dateCheck && /^\d{4}-\d{2}-\d{2}$/.test(dateCheck)) {
+                            isHeader = false;
+                        }
+                    }
+
+                    var startRow = isHeader ? 1 : 0;
+
+                    for (var r = startRow; r < rows.length; r++) {
+                        var row = rows[r];
+                        if (!row || row.length < 3) continue;
+
+                        // 前3列：日期、上班时间、下班时间
+                        var dateVal = normalizeDate(row[0]);
+                        var startVal = normalizeTime(row[1]);
+                        var endVal = normalizeTime(row[2]);
+
+                        if (!dateVal || !startVal || !endVal) continue;
+
+                        // 第4列如果有值 → 可能是类型或备注
+                        var isWorkday = !isAutoRestDay(dateVal);
+                        var remark = '';
+                        if (row.length >= 4 && row[3] !== undefined && row[3] !== null) {
+                            var col4 = String(row[3] || '').trim();
+                            if (col4.indexOf('休息') !== -1 || col4.indexOf('假日') !== -1) {
+                                isWorkday = false;
+                            } else if (col4.indexOf('工作日') !== -1 || col4.indexOf('上班') !== -1) {
+                                isWorkday = true;
+                            } else {
+                                remark = col4;
+                            }
+                        }
+                        if (row.length >= 5 && row[4] !== undefined && row[4] !== null) {
+                            remark = String(row[4] || '').trim();
+                        }
+
+                        entries.push({
+                            date: dateVal,
+                            start_time: startVal,
+                            end_time: endVal,
+                            is_workday: isWorkday,
+                            remark: remark
+                        });
+                    }
+                }
+
+                if (entries.length === 0) {
+                    throw new Error('文件中没有找到有效记录\n\n请确保Excel格式：\n第1列=日期  第2列=上班时间  第3列=下班时间\n（可带表头行，也可不带）');
+                }
+
+                if (!confirm('将导入 ' + entries.length + ' 条记录' + (settings ? '和设置' : '') + '，会覆盖当前数据，确认？')) return;
+
+                if (settings) {
+                    saveSettingsToStorage(settings);
+                }
+                // 按日期降序排列
+                entries.sort(function(a, b) {
+                    if (a.date > b.date) return -1;
+                    if (a.date < b.date) return 1;
+                    return 0;
+                });
+                saveEntries(entries);
+                loadSettings();
+                renderTable();
+                showToast('✅ 成功导入 ' + entries.length + ' 条记录');
+            } catch(err) {
+                showToast('❌ ' + (err.message || '文件格式错误，导入失败'), '#e74c3c');
+            }
+        };
+
+        if (file.name.toLowerCase().endsWith('.json')) {
+            reader.readAsText(file);
+        } else {
+            reader.readAsArrayBuffer(file);
+        }
+    };
+    input.click();
+}
+
+// 标准化 Excel 导出的日期格式
+function normalizeDate(val) {
+    if (val === undefined || val === null || val === '') return '';
+
+    // Excel 数字日期（含日期时间序列号）
+    if (typeof val === 'number') {
+        // 取整数部分 = 日期序列号
+        var dateNum = Math.floor(val);
+        if (dateNum > 30000 && dateNum < 80000) {
+            var excelDate = new Date((dateNum - 25569) * 86400 * 1000);
+            return formatDateStr(excelDate);
+        }
+    }
+
+    // Date 对象
+    if (val instanceof Date && !isNaN(val.getTime())) {
+        return formatDateStr(val);
+    }
+
+    var str = String(val).trim();
+    if (!str) return '';
+
+    // 已经是 YYYY-MM-DD 格式
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+    // 纯整数（Excel 日期序列号的字符串形式）
+    if (/^\d+$/.test(str)) {
+        var num = parseInt(str);
+        if (num > 30000 && num < 80000) {
+            var excelDate2 = new Date((num - 25569) * 86400 * 1000);
+            return formatDateStr(excelDate2);
+        }
+    }
+
+    // MM/DD/YYYY 或 YYYY/MM/DD 格式
+    var parts = str.split(/[\/\-\.]/);
+    if (parts.length === 3) {
+        var a = parseInt(parts[0]), b = parseInt(parts[1]), cc = parseInt(parts[2]);
+        if (isNaN(a) || isNaN(b) || isNaN(cc)) return '';
+        if (a > 12) { // YYYY/MM/DD
+            return a + '-' + pad2(b) + '-' + pad2(cc);
+        } else { // MM/DD/YYYY
+            return cc + '-' + pad2(a) + '-' + pad2(b);
+        }
+    }
+
+    // 中文格式：2025年1月5日
+    var cnMatch = str.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+    if (cnMatch) {
+        return cnMatch[1] + '-' + pad2(parseInt(cnMatch[2])) + '-' + pad2(parseInt(cnMatch[3]));
+    }
+
+    return '';
+}
+
+// 标准化时间格式
+function normalizeTime(val) {
+    if (val === undefined || val === null || val === '') return '';
+
+    // 如果是数字（Excel 序列号）
+    if (typeof val === 'number') {
+        // 提取纯时间部分：整数部分 = 日期，小数部分 = 时间
+        var frac = val - Math.floor(val);
+        // 处理浮点精度：比如 0.3854166666666667 → 09:15
+        var totalMin = Math.round(frac * 24 * 60);
+        if (totalMin >= 1440) totalMin -= 1440; // 边界 case：23:59 的精度问题
+        var hh = Math.floor(totalMin / 60);
+        var mm = totalMin % 60;
+        return pad2(hh) + ':' + pad2(mm);
+    }
+
+    // 如果是 Date 对象
+    if (val instanceof Date && !isNaN(val.getTime())) {
+        return pad2(val.getHours()) + ':' + pad2(val.getMinutes());
+    }
+
+    var str = String(val).trim();
+    if (!str) return '';
+
+    // 已经是 HH:MM 格式 (如 "09:15")
+    if (/^\d{2}:\d{2}$/.test(str)) return str;
+
+    // Excel 纯时间小数转成的字符串 (如 "0.3854166666666667")
+    var numVal = parseFloat(str);
+    if (!isNaN(numVal) && numVal >= 0 && numVal < 1 && str.indexOf('.') !== -1) {
+        var totalMin2 = Math.round(numVal * 24 * 60);
+        if (totalMin2 >= 1440) totalMin2 -= 1440;
+        var hh2 = Math.floor(totalMin2 / 60);
+        var mm2 = totalMin2 % 60;
+        return pad2(hh2) + ':' + pad2(mm2);
+    }
+
+    // 时间字符串：H:MM、HH:MM、HH:MM:SS、H:MM:SS，可能带 AM/PM
+    var ampm = false;
+    var isPM = false;
+    if (/pm/i.test(str)) { ampm = true; isPM = true; }
+    else if (/am/i.test(str)) { ampm = true; isPM = false; }
+
+    var timeMatch = str.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (timeMatch) {
+        var hour = parseInt(timeMatch[1]);
+        var minute = parseInt(timeMatch[2]);
+        if (ampm && isPM && hour < 12) hour += 12;
+        if (ampm && !isPM && hour === 12) hour = 0;
+        return pad2(hour) + ':' + pad2(minute);
+    }
+
+    return '';
+}
+
+function pad2(n) {
+    return n < 10 ? '0' + n : '' + n;
+}
+
+function formatDateStr(d) {
+    // 使用 UTC 方法，避免本地时区导致日期偏移一天
+    return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate());
+}
+
+// ==================== Toast ====================
+var toastTimer;
+function showToast(msg, color) {
+    var el = document.getElementById('toast');
+    el.textContent = msg;
+    el.style.background = color || '#27ae60';
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function() { el.classList.remove('show'); }, 2000);
+}
+
+// ==================== 初始化 ====================
+function init() {
+    loadSettings();
+    // 日期不再强制填当天，由用户手动选择
+    renderTable();
+    updatePreview();
+
+    // 初始化节假日年份筛选器
+    initHolidayYearFilter();
+
+    // 监听输入变化实时预览
+    document.getElementById('inputStart').addEventListener('change', updatePreview);
+    document.getElementById('inputEnd').addEventListener('change', updatePreview);
+    document.getElementById('inputDate').addEventListener('change', function() {
+        onDateChange();
+        updatePreview();
+    });
+    document.getElementById('inputDayoff').addEventListener('change', function() {
+        onDayoffToggle();
+    });
+    document.getElementById('editDate').addEventListener('change', function() {
+        onEditDateChange();
+    });
+    document.getElementById('editDayoff').addEventListener('change', function() {
+        onEditDayoffToggle();
+    });
+
+    // 弹窗点击遮罩关闭
+    document.getElementById('editModal').addEventListener('click', function(e) {
+        if (e.target === this) closeEditModal();
+    });
+
+    // 键盘 ESC 关闭弹窗
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') closeEditModal();
+    });
+}
+
+function initHolidayYearFilter() {
+    var years = getAllHolidayYears();
+    var select = document.getElementById('holidayYearFilter');
+    var optionsHtml = '<option value="all">全部年份</option>';
+    var data = getHolidayData();
+    for (var i = 0; i < years.length; i++) {
+        optionsHtml += '<option value="' + years[i] + '">' + years[i] + '年 (' + countYearDates(data, years[i]) + '天)</option>';
+    }
+    select.innerHTML = optionsHtml;
+}
+
+init();
+</script>
+</body>
+</html>
